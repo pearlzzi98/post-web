@@ -1,8 +1,12 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+
+logger = logging.getLogger(__name__)
 from app.models.user import User
 from app.schemas.user import TokenRefresh, TokenResponse, UserLogin, UserRegister, UserResponse
 from app.services.auth import (
@@ -49,6 +53,7 @@ async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
             detail="Invalid email or password",
         )
 
+    logger.info("인증 ok: %s", user.email)
     return TokenResponse(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),
