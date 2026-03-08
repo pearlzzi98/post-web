@@ -10,7 +10,7 @@ _client = None
 def get_storage_client():
     global _client
     if _client is None:
-        _client = create_client(settings.supabase_url, settings.supabase_key)
+        _client = create_client(settings.supabase_url, settings.supabase_service_role_key)
     return _client
 
 

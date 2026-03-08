@@ -123,4 +123,4 @@ docker compose logs -f
 
 Supabase 프로젝트의 **SQL Editor**에서 테이블을 생성해야 한다. SQL은 `docs/PLAN.md`를 참고한다.
 
-Storage에서 `post-files` 버킷을 생성하고 Public 접근을 허용한다.
+Storage에서 `post-web-files` 버킷을 생성하고 Public 접근을 허용한다.
