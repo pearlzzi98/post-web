@@ -71,6 +71,72 @@ chore: .gitignore에 docs/ 추가
 
 ---
 
+## 기술 스택
+
+- **언어**: Python 3.12 / **프레임워크**: FastAPI / **패키지 매니저**: uv
+- **DB**: Supabase (PostgreSQL + asyncpg + SQLAlchemy 2.0)
+- **파일 저장**: Supabase Storage (supabase-py)
+- **인증**: JWT (python-jose + passlib + bcrypt)
+- **로컬 실행**: uvicorn --reload / **배포**: Docker (docker-compose, Ubuntu)
+
+## 핵심 패키지 주의사항
+
+- `supabase` 패키지: **`<2.10.0`** 고정 (2.10+ 이상은 pyiceberg → C++ 빌드 필요)
+- `bcrypt` 패키지: **`<4.0.0`** 고정 (4.0+ 이상은 passlib 1.7.4와 호환 안됨)
+- 모델 UUID 타입: `sqlalchemy.Uuid` 사용 (`postgresql.UUID` 쓰면 SQLite 테스트 실패)
+- 채팅: 단일 서버, 메모리 내 WebSocket Dict 관리 (Redis 없음)
+
+## 프로젝트 구조
+
+```
+post-web/
+├── app/
+│   ├── main.py
+│   ├── config.py          # pydantic-settings
+│   ├── database.py        # SQLAlchemy async engine
+│   ├── dependencies.py    # JWT 인증 의존성
+│   ├── models/            # ORM 모델 (User, Post, PostFile, Comment, ChatMessage)
+│   ├── schemas/           # Pydantic 스키마
+│   ├── routers/           # auth, posts, comments, files, profile, chat
+│   └── services/          # auth.py (JWT/bcrypt), storage.py (Supabase Storage)
+├── tests/                 # pytest + aiosqlite (in-memory)
+├── docs/                  # MEMORY.md, PLAN.md (gitignored)
+├── .env.example
+├── pyproject.toml
+├── Dockerfile
+└── docker-compose.yml
+```
+
+## 로컬 실행 / 테스트
+
+```bash
+# 서버 실행
+uv run uvicorn app.main:app --reload
+
+# 테스트 실행 (14/14 통과 확인됨)
+uv run pytest tests/ -v
+```
+
+## API 엔드포인트 요약
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| POST | /auth/register | 회원가입 |
+| POST | /auth/login | 로그인 (JWT 발급) |
+| POST | /auth/refresh | 토큰 갱신 |
+| GET/POST | /posts | 게시글 목록/작성 |
+| GET/PATCH/DELETE | /posts/{id} | 게시글 상세/수정/삭제 |
+| GET/POST | /posts/{id}/comments | 댓글 목록/작성 |
+| PATCH/DELETE | /posts/{id}/comments/{cid} | 댓글 수정/삭제 |
+| POST/DELETE | /posts/{id}/files | 파일 업로드/삭제 |
+| GET | /users/{id} | 프로필 조회 |
+| PATCH | /users/me | 프로필 수정 |
+| POST | /users/me/avatar | 아바타 업로드 |
+| GET | /chat/history | 채팅 이력 조회 |
+| WS | /ws/chat?token= | 실시간 채팅 |
+
+---
+
 ## docs/ 디렉토리
 
 - `docs/PLAN.md` — 세션 플랜 기록 (gitignore 처리)
