@@ -6,4 +6,7 @@ __pycache__/
 dist/
 .pytest_cache/
 docs/
+backend/docs/
 .claude/
+node_modules/
+frontend/dist/

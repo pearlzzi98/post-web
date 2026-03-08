@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=(".env", "../.env"), env_file_encoding="utf-8", extra="ignore")
 
     # Supabase (public)
     supabase_url: str = Field(validation_alias="NEXT_PUBLIC_SUPABASE_URL")
@@ -21,6 +21,9 @@ class Settings(BaseSettings):
 
     # Storage
     supabase_bucket: str = "post-web-files"
+
+    # Redis
+    redis_url: str = "redis://localhost:6379"
 
 
 settings = Settings()

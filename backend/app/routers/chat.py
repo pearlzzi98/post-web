@@ -1,5 +1,6 @@
+import asyncio
+import json
 import uuid
-from collections import defaultdict
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy import or_, select
@@ -11,11 +12,9 @@ from app.models.chat import ChatMessage
 from app.models.user import User
 from app.schemas.chat import ChatMessageResponse
 from app.services.auth import decode_token
+from app.services.redis_client import get_redis
 
 router = APIRouter(tags=["chat"])
-
-# 메모리 내 연결 관리: {user_id: WebSocket}
-_connections: dict[str, WebSocket] = {}
 
 
 @router.get("/chat/history", response_model=list[ChatMessageResponse])
@@ -44,19 +43,33 @@ async def get_chat_history(
     return result.scalars().all()
 
 
+async def _redis_listener(user_id: str, websocket: WebSocket, redis_conn) -> None:
+    """Redis 채널을 구독하여 수신 메시지를 WebSocket으로 전달합니다."""
+    pubsub = redis_conn.pubsub()
+    await pubsub.subscribe(f"chat:{user_id}")
+    try:
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                await websocket.send_json(json.loads(message["data"]))
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await pubsub.unsubscribe(f"chat:{user_id}")
+        await pubsub.aclose()
+
+
 @router.websocket("/ws/chat")
 async def websocket_chat(
     websocket: WebSocket,
     token: str = Query(...),
 ):
     """
-    WebSocket 채팅 엔드포인트.
+    WebSocket 채팅 엔드포인트. Redis pub/sub 기반.
 
     연결: ws://host/ws/chat?token=<access_token>
     메시지 송신 형식: {"receiver_id": "<uuid>", "content": "<text>"}
     메시지 수신 형식: {"sender_id": "<uuid>", "content": "<text>", "created_at": "<iso>"}
     """
-    # 토큰 검증
     try:
         user_id = decode_token(token, token_type="access")
     except ValueError:
@@ -64,7 +77,9 @@ async def websocket_chat(
         return
 
     await websocket.accept()
-    _connections[user_id] = websocket
+
+    r = await get_redis()
+    listener_task = asyncio.create_task(_redis_listener(user_id, websocket, r))
 
     try:
         while True:
@@ -93,15 +108,14 @@ async def websocket_chat(
                 "created_at": msg.created_at.isoformat(),
             }
 
-            # 수신자가 연결되어 있으면 실시간 전달
-            if receiver_id in _connections:
-                try:
-                    await _connections[receiver_id].send_json(payload)
-                except Exception:
-                    del _connections[receiver_id]
+            # 수신자 채널에 publish
+            await r.publish(f"chat:{receiver_id}", json.dumps(payload))
 
-            # 송신자에게도 echo
+            # 송신자에게 echo
             await websocket.send_json(payload)
 
     except WebSocketDisconnect:
-        _connections.pop(user_id, None)
+        pass
+    finally:
+        listener_task.cancel()
+        await asyncio.gather(listener_task, return_exceptions=True)

@@ -1,6 +1,6 @@
 # post-web
 
-FastAPI 기반 게시판 백엔드 API 서버.
+FastAPI + Vite/React 기반 풀스택 게시판 서비스.
 
 > Built with [Claude](https://claude.ai) (claude-sonnet-4-6)
 
@@ -15,17 +15,26 @@ FastAPI 기반 게시판 백엔드 API 서버.
 | 파일 첨부 | 게시글에 파일 업로드 (Supabase Storage) |
 | 댓글 | 게시글별 댓글 작성 / 수정 / 삭제 |
 | 프로필 | 정보 수정, 프로필 사진 업로드 |
-| 1:1 채팅 | WebSocket 실시간 채팅, 이력 조회 |
+| 1:1 채팅 | WebSocket 실시간 채팅 (Redis pub/sub), 이력 조회 |
 
 ---
 
 ## 기술 스택
 
-- **Python 3.12** / **FastAPI**
-- **uv** — 패키지 매니저
+### Backend
+- **Python 3.12** / **FastAPI** / **uv**
 - **Supabase** — PostgreSQL DB + Storage
 - **SQLAlchemy 2.0** (async) + **asyncpg**
 - **JWT** (python-jose + passlib)
+- **Redis** — pub/sub 기반 실시간 채팅
+
+### Frontend
+- **Vite + React 18 + TypeScript**
+- **React Router v6** / **Zustand** / **TailwindCSS**
+
+### 인프라
+- **Docker + docker-compose** (redis / backend / frontend)
+- **k8s/kind** — blue-green 배포 지원
 
 ---
 
@@ -33,17 +42,33 @@ FastAPI 기반 게시판 백엔드 API 서버.
 
 ```
 post-web/
-├── app/
-│   ├── main.py            # FastAPI 앱 진입점
-│   ├── config.py          # 환경변수
-│   ├── database.py        # DB 엔진/세션
-│   ├── dependencies.py    # 인증 의존성
-│   ├── models/            # ORM 모델
-│   ├── schemas/           # Pydantic 스키마
-│   ├── routers/           # API 라우터
-│   └── services/          # 비즈니스 로직
-├── tests/                 # 테스트 코드
-├── Dockerfile
+├── backend/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── config.py
+│   │   ├── database.py
+│   │   ├── dependencies.py
+│   │   ├── models/
+│   │   ├── schemas/
+│   │   ├── routers/     # auth, posts, comments, files, profile, chat
+│   │   └── services/    # auth.py, storage.py, redis_client.py
+│   ├── tests/
+│   ├── Dockerfile
+│   └── pyproject.toml
+├── frontend/
+│   ├── src/
+│   │   ├── api/         # fetch 래퍼
+│   │   ├── components/
+│   │   ├── pages/       # 9개 페이지
+│   │   ├── store/       # Zustand
+│   │   └── types/
+│   ├── Dockerfile
+│   └── nginx.conf
+├── k8s/
+│   ├── backend.yaml
+│   ├── frontend.yaml
+│   ├── redis.yaml
+│   └── ingress.yaml
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -52,7 +77,7 @@ post-web/
 
 ## 환경 설정
 
-`.env.example`을 복사해 `.env`를 작성한다.
+루트의 `.env.example`을 복사해 `.env`를 작성한다.
 
 ```bash
 cp .env.example .env
@@ -60,62 +85,81 @@ cp .env.example .env
 
 | 변수 | 설명 |
 |------|------|
-| `SUPABASE_URL` | Supabase 프로젝트 URL |
-| `SUPABASE_KEY` | Supabase API 키 |
 | `DATABASE_URL` | PostgreSQL 연결 문자열 (`postgresql+asyncpg://...`) |
 | `SECRET_KEY` | JWT 서명 키 (32자 이상) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase 프로젝트 URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon 키 |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role 키 |
 
 ---
 
 ## 로컬 개발 환경
 
-**요구사항:** Python 3.12+, [uv](https://docs.astral.sh/uv/)
+**요구사항:** Python 3.12+, [uv](https://docs.astral.sh/uv/), Node.js 20+
 
 ```bash
-# 의존성 설치
+# 백엔드 서버 실행
+cd backend
 uv sync
-
-# 개발 서버 실행
 uv run uvicorn app.main:app --reload
+
+# 프론트엔드 개발 서버 (별도 터미널)
+cd frontend
+npm install
+npm run dev
 ```
 
-서버 실행 후 API 문서: `http://localhost:8000/docs`
+- 백엔드 API 문서: `http://localhost:8000/docs`
+- 프론트엔드: `http://localhost:5173`
 
 ---
 
-## 빌드 & 테스트
+## 테스트
 
 ```bash
-# 전체 테스트 실행 (SQLite in-memory, Supabase 불필요)
+cd backend
 uv run pytest tests/ -v
-
-# 특정 테스트만 실행
-uv run pytest tests/test_auth.py -v
 ```
 
 ---
 
-## 배포 (Ubuntu 서버)
-
-**요구사항:** Docker, Docker Compose
+## Docker로 실행
 
 ```bash
-# 1. 코드 가져오기
-git clone <repo-url>
-cd post-web
+# 전체 스택 실행 (redis + backend + frontend)
+docker compose up --build
 
-# 2. 환경변수 설정
-cp .env.example .env
-# .env 파일에 실제 값 입력
-
-# 3. 실행
+# 백그라운드 실행
 docker compose up -d --build
-
-# 4. 확인
-docker compose logs -f
 ```
 
-서비스는 `8000` 포트로 실행된다.
+- 프론트엔드: `http://localhost:3000`
+- 백엔드 API: `http://localhost:8000`
+
+---
+
+## k8s 배포 (kind)
+
+```bash
+# 이미지 빌드
+docker build -t post-web-backend:latest ./backend
+docker build -t post-web-frontend:latest ./frontend
+
+# kind 클러스터에 이미지 로드
+kind load docker-image post-web-backend:latest
+kind load docker-image post-web-frontend:latest
+
+# Secret 생성
+kubectl create secret generic backend-secret \
+  --from-literal=DATABASE_URL=... \
+  --from-literal=SECRET_KEY=... \
+  --from-literal=NEXT_PUBLIC_SUPABASE_URL=... \
+  --from-literal=NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
+  --from-literal=SUPABASE_SERVICE_ROLE_KEY=...
+
+# 매니페스트 적용
+kubectl apply -f k8s/
+```
 
 ---
 

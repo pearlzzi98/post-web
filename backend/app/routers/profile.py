@@ -16,6 +16,12 @@ AVATAR_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5MB
 
 
+@router.get("/me", response_model=UserResponse)
+async def get_my_profile(current_user: User = Depends(get_current_user)):
+    """현재 로그인한 사용자의 프로필을 반환합니다."""
+    return current_user
+
+
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_profile(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.id == user_id))
